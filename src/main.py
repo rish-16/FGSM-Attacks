@@ -1,27 +1,42 @@
+import os
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPool2D, Flatten, Dense
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.datasets import mnist
+from tensorflow.keras.applications.resnet50 import ResNet50, decode_predictions, preprocess_input
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import matplotlib.pyplot as plt
 
-(x_train, y_train), (x_test, y_test) = mnist.load_data()
-x_train = x_train.reshape([len(x_train), 28, 28, 1]) / 255
-x_test = x_test.reshape([len(x_test), 28, 28, 1]) / 255
+model = ResNet50(include_top=True, weights="imagenet")
+model.trainable = False
+    
+def preprocess_img(image):
+    image = tf.cast(image, tf.float32)
+    image = tf.image.resize(image, (224, 224))
+    image = preprocess_input(image)
+    image = image[None, ...]
+    
+    return image
+    
+def get_label(logits):
+    label = decode_predictions(logits, top=1)[0][0]
+    return label
+    
+img = load_img("../assets/dog1.jpg")
+img = img_to_array(img)
+img = preprocess_img(img)
 
-y_train = to_categorical(y_train, 10)
-y_test = to_categorical(y_test, 10)
+preds = model.predict(img)
+_, image_class, class_confidence = get_label(preds)
+print (image_class, class_confidence)
 
-model = Sequential()
-model.add(Conv2D(32, (3,3), input_shape=[28, 28, 1], activation="relu"))
-model.add(MaxPool2D((2,2)))
-model.add(Conv2D(64, (3,3), activation="relu"))
-model.add(MaxPool2D((2,2)))
-model.add(Flatten())
-model.add(Dense(128, activation="relu"))
-model.add(Dense(256, activation="relu"))
-model.add(Dense(10, activation="softmax"))
-
-model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["acc"])
-
-hist = model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=10, batch_size=64, verbose=1)
-
+def fgsm(x, y_adv, epsilon):
+    with tf.GradientTape() as gt:
+        gt.watch(x)
+        
+        label = tf.reshape(model(x), shape=[1, 10])
+        loss = tf.keras.losses.categorical_crossentropy(y_adv, label)
+        
+    grad = gt.gradient(loss, x)
+    gamma = epsilon * tf.sign(grad)
+    
+    return gamma
+    
